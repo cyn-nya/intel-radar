@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>情报雷达 · 开源雷达</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230d1117'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%232f81f7' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%233fb950'/%3E%3Cline x1='16' y1='16' x2='27' y2='7' stroke='%233fb950' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-row">
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      情报雷达
+      <small>开源雷达 v1.0</small>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="pill-power">电源 —</span>
+    <span class="pill" id="pill-ai">AI —</span>
+    <span class="pill" id="pill-github">GitHub —</span>
+    <span class="pill" id="pill-sched">调度 —</span>
+    <button class="btn sm" onclick="runDiagnose()">体检</button>
+    <button class="btn sm" onclick="testNotify()">发送测试通知</button>
+    <button class="btn primary" id="btn-run" onclick="runNow()">立即采集</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-view="digest">今日榜单<span class="count" id="c-digest"></span></div>
+  <div class="tab" data-view="pool">候选池<span class="count" id="c-pool"></span></div>
+  <div class="tab" data-view="runs">运行记录</div>
+  <div class="tab" data-view="settings">设置</div>
+  <div class="tab" data-view="guide">上手引导</div>
+</div>
+
+<main>
+  <!-- ============ 今日榜单 ============ -->
+  <section class="view active" id="view-digest">
+    <div id="digest-notices"></div>
+    <div id="digest-body"><div class="empty"><span class="spinner"></span> 载入中…</div></div>
+  </section>
+
+  <!-- ============ 候选池 ============ -->
+  <section class="view" id="view-pool">
+    <div class="toolbar">
+      <input type="text" id="pool-q" placeholder="搜索仓库名 / 简介 / AI 摘要…" style="min-width:280px" oninput="debounceLoadPool()">
+      <select id="pool-status" onchange="loadPool()">
+        <option value="all">全部状态</option>
+        <option value="candidate">候选</option>
+        <option value="tracking">跟进中</option>
+        <option value="starred">已收藏</option>
+        <option value="rejected">已淘汰</option>
+      </select>
+      <select id="pool-order" onchange="loadPool()">
+        <option value="score">按综合分</option>
+        <option value="momentum">按星标增速</option>
+        <option value="stars">按星标总数</option>
+        <option value="first_seen">按首次发现</option>
+        <option value="seen">按最近更新</option>
+      </select>
+      <label class="check"><input type="checkbox" id="pool-min" onchange="loadPool()"> 只看 0.5 分以上</label>
+      <div class="spacer"></div>
+      <span class="muted small" id="pool-count"></span>
+    </div>
+    <div id="pool-body"><div class="empty"><span class="spinner"></span> 载入中…</div></div>
+  </section>
+
+  <!-- ============ 运行记录 ============ -->
+  <section class="view" id="view-runs">
+    <div class="section-title">采集运行记录<div class="line"></div></div>
+    <div id="runs-body"><div class="empty"><span class="spinner"></span> 载入中…</div></div>
+    <div class="section-title">通知投递记录<div class="line"></div></div>
+    <div id="notify-body"></div>
+  </section>
+
+  <!-- ============ 设置 ============ -->
+  <section class="view" id="view-settings">
+    <div class="toolbar">
+      <span class="muted small">这里的改动保存在 <code class="inline">data/overrides.yaml</code>，不会动 <code class="inline">config.yaml</code>。</span>
+      <div class="spacer"></div>
+      <button class="btn sm danger" onclick="resetConfig()">恢复默认</button>
+      <button class="btn primary sm" onclick="saveConfig()">保存设置</button>
+    </div>
+    <div class="settings-grid" id="settings-body"><div class="empty"><span class="spinner"></span> 载入中…</div></div>
+  </section>
+
+  <!-- ============ 引导 ============ -->
+  <section class="view" id="view-guide">
+    <div id="guide-body"></div>
+  </section>
+</main>
+
+<div class="drawer-bg" id="drawer-bg" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"></div>
+<div id="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

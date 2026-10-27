@@ -1,0 +1,212 @@
+# ============================================================
+#  情报雷达 · 配置文件
+#  改完保存即可，下次运行生效（看板里也能改一部分）
+# ============================================================
+
+app:
+  host: 127.0.0.1
+  port: 8787
+  data_dir: data            # SQLite 与缓存目录（相对 radar/）
+  open_browser: true        # 启动时自动打开浏览器
+
+# ------------------------------------------------------------
+#  AI 引擎：混合路由
+#  bulk   = 量大、要便宜的活（摘要、翻译、初筛）     -> 优先 local
+#  polish = 量小、要质量的活（最终文案、商机解读）   -> 优先 api
+#  任何一个不可用都会自动降级到另一个；两个都不可用则退化为规则模板
+# ------------------------------------------------------------
+llm:
+  mode: hybrid              # hybrid | local_only | api_only | off
+  # hybrid 时先试哪个引擎。api=快（实测 3.6 秒/张），local=省钱但慢（CPU 上 2~3 分钟/张且易超时）。
+  prefer: api
+  local:
+    enabled: true
+    base_url: http://127.0.0.1:11434
+    model: qwen3:8b         # `ollama list` 里有的名字；没有就自动跳过
+    # 关键：qwen3 / deepseek-r1 这类"思考模型"默认会把整个 token 预算烧在思考上，
+    # 导致正文为空、AI 加工全线失效（实测 120 token 全被思考吃光）。
+    # 保持 true 才能在 Ollama 上稳定拿到结果；若你的模型不支持该参数会自动去掉重试。
+    disable_thinking: true
+    # 8b 模型纯 CPU 推理约 1.3 token/秒，一张卡要 2~3 分钟。180 秒必然超时。
+    timeout: 420
+    # 喂给本地模型（尤其 CPU 推理）的 README 字符上限。太大＝每次都超时。
+    max_readme_chars: 2500
+  api:
+    enabled: true
+    # 任意 OpenAI 兼容服务商。当前指向并行智算云（实测 50/84 模型可用）。
+    base_url: https://llmapi.paratera.com
+    # 实测对比（同一个真实卡片任务）：
+    #   DeepSeek-V4.1-Flash  3.6s   JSON 正常   ← 选它
+    #   GLM-4-Flash         11.2s   JSON 正常但很敷衍（"无重大风险"）
+    #   GLM-4.5-Flash       25.2s   JSON 被 max_tokens 截断
+    #   Qwen3.8-Flash       28.1s   JSON 正常、质量好，但慢
+    model: DeepSeek-V4.1-Flash
+    # 密钥从环境变量读，不要写在这里。留空＝依次尝试 LLM_API_KEY、DEEPSEEK_API_KEY。
+    # 想换服务商只改 base_url / model / key_env 三行即可。
+    key_env: ""
+    timeout: 120
+    # 这个服务商不稳定（实测有 429、500、超时、连接重置），
+    # 所以失败会自动顺着链条降级到本地模型，再不行才用规则模板。
+    retries: 2
+    # API 吃得下长 README，喂满能让摘要更准（本地模型请见 llm.local.max_readme_chars）
+    max_readme_chars: 6000
+    # 以下用于成本估算（元 / 百万 token）。**这是估值，请按服务商实际账单核对。**
+    price_in: 1.0
+    price_out: 3.0
+  cost_guard:
+    daily_limit_cny: 3.0    # 当日 API 花费超过它，自动只用本地/规则
+    max_bulk_items: 25      # 单次运行最多让 AI 加工多少个条目
+
+# ------------------------------------------------------------
+#  管道一：开源雷达
+# ------------------------------------------------------------
+open_source:
+  enabled: true
+
+  # —— 采集窗口 ——
+  discover:
+    # 新爆款：最近 N 天创建、星标超过 M
+    new_repos:
+      days: 45
+      min_stars: 150
+      per_query: 30
+    # 已跟踪仓库的回访刷新（算真实增速的关键）
+    refresh_tracked: true
+    refresh_limit: 120      # 单次最多刷新多少个，控制 API 配额
+    # 单次最多抓多少份 README。README 是"可部署性"和 AI 摘要的输入，
+    # 没配 token 时核心配额只有 60/时，这里会被自动压到很低。
+    readme_limit: 90
+
+  # —— 硬性筛选 ——
+  filters:
+    min_stars: 150
+    max_stars: 8000         # 超过这个数通常中文教程已泛滥
+    max_age_days: 400
+    exclude_archived: true
+    exclude_forks: true
+    # 命中任一词直接淘汰（小写匹配 name/description/topics）
+    exclude_keywords:
+      - awesome-list
+      - awesome list
+      - 面试
+      - interview
+      - roadmap
+      - cheatsheet
+      - cheat-sheet
+      - tutorial
+      - 教程合集
+      - wallpaper
+      - 壁纸
+      - vpn
+      - 翻墙
+      - proxy-pool
+      - 破解
+      - crack
+      - keygen
+      - 私服
+      - casino
+      - 博彩
+      - 成人
+      - nsfw
+      - porn
+      - crypto-miner
+      - 挖矿
+      - trading-bot
+      - 炒币
+    # 额外的内容安全规则（radar/safety.py）：漏洞利用、恶意软件、DRM 破解、
+    # 游戏外挂、翻墙、博彩、固件解锁等一律硬拦截。下面这个开关控制
+    # 「不是可部署软件（awesome 清单 / 提示词合集 / 路线图）」那一类要不要一并拦掉。
+    # 如果你觉得提示词合集也能做成内容生意，把它设成 false。
+    block_non_software: true
+    # 只保留这些语言（留空 = 不限）
+    languages: []
+    # 必须命中的正向信号（留空 = 不限）
+    require_any_keyword: []
+
+  # —— 打分权重（四项子分各自归一化到 0..1 后加权）——
+  scoring:
+    weight_momentum: 0.42       # 星标增速
+    weight_cn_gap: 0.33         # 中文资料稀缺度
+    weight_deployability: 0.25  # 可部署/可做成教程的程度
+    # 增速看的窗口（天），按可用的快照自动选最近的一个    momentum_windows: [1, 3, 7]
+    # 快照跨度不足这么多小时就**不**外推日增，改用「总星数 ÷ 仓库年龄」估算。
+    # 为什么需要：一天跑多次时，两次快照可能只隔几分钟，线性外推会得出
+    # 「1691 星/天」这种比仓库总星数还大的荒谬值。攒够跨度才启用真实差分。
+    min_span_hours: 6
+    # 出现这些信号扣分
+    penalty_gpu: 0.25           # 需要 GPU / CUDA
+    penalty_enterprise: 0.20    # 需要 K8s / 企业级基础设施
+    penalty_api_key: 0.15       # 必须买商业 API 才能用起来
+    penalty_hype: 0.30          # 疑似刷星（star 暴涨但 fork/issue 极低）
+
+  # —— 中文稀缺度探测 ——
+  cn_gap:
+    # 1) README 里是否已有中文（最直接、零额外请求）
+    check_readme_cjk: true
+    # 2) 仓库是否有中文 README 变体（README.zh.md / README_CN.md 等）
+    check_readme_variants: true
+    # 3) 用 GitHub 搜索“项目名 + 中文生态”，额外 API 调用，较慢，默认关
+    search_cn_ecosystem: false
+    # 4) 用 Bing 数中文结果（Bing 可达），默认开
+    bing_probe: true
+    bing_per_item: 1
+
+  # —— AI 加工：产出“选题卡” ——
+  enrich:
+    top_n: 12                   # 每次运行只把得分前 N 名交给 AI
+    reenrich_days: 7            # N 天内已加工过的不重复加工
+    fields:
+      - summary_zh              # 一句话说清这工具干嘛的
+      - audience                # 什么人会需要它
+      - deploy_note             # 部署要点与环境要求
+      - monetize                # 变现角度：能做成什么，卖点在哪
+      - risk                    # 风险/不适合谁
+
+  # —— 交付与推送 ——
+  deliver:
+    # 什么分数以上才推送（0..1）。
+    # 注意：综合分是"整池混合排名"，不是绝对能力值 —— 池子整体变强时分会一起上移。
+    # 榜单本身按分数排序，这个阈值只决定"要不要发通知给你"。
+    notify_min_score: 0.82
+    notify_top_n: 5
+    daily_digest: true          # 每天生成一份汇总榜
+    digest_hour: 9              # 汇总时段（配合调度）
+    desktop_notify: true        # 总分 > 阈值时弹 Windows 通知
+
+# ------------------------------------------------------------
+#  通知渠道（哪个填了就用哪个，全空则只用网页看板 + 桌面通知）
+# ------------------------------------------------------------
+notify:
+  desktop:
+    enabled: true
+  wecom:                      # 企业微信群机器人
+    enabled: false
+    webhook: ""               # https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx
+  email:
+    enabled: false
+    smtp_host: smtp.qq.com
+    smtp_port: 465
+    use_ssl: true
+    username: ""
+    password: ""              # 邮箱 SMTP 授权码，不是登录密码
+    to: []
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+    proxy: ""                 # 本机直连不通，需要形如 http://127.0.0.1:7890
+
+# ------------------------------------------------------------
+#  调度：笔记本友好
+# ------------------------------------------------------------
+schedule:
+  enabled: true
+  # 每天在这些时刻尝试跑一次（24 小时制）
+  times: ["09:10", "21:10"]
+  # 电量守卫
+  power_guard:
+    enabled: true
+    require_ac: true          # 没插电就跳过采集（看板仍可用）
+    min_battery: 35           # 电池低于这个百分比也跳过
+  # 错过补跑：开机/启动时若发现今天该跑没跑，立刻补一次
+  catch_up_on_start: true
