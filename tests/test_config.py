@@ -42,7 +42,10 @@ class TestDataPaths:
     def test_data_dir_is_inside_project(self):
         d = cfg.data_dir
         assert d.name == "data"
-        assert d.parent.name == "radar"
+        # 不要断言父目录叫 "radar" —— 那只是本地的目录名。
+        # clone 到哪儿目录就叫什么（CI 上是 intel-radar/），
+        # 所以应该验证「父目录就是项目根」，而不是硬编码一个名字。
+        assert (d.parent / "run.py").is_file(), "data/ 的父目录应当是项目根"
 
     def test_db_path_is_in_data_dir(self):
         assert cfg.db_path.parent == cfg.data_dir
